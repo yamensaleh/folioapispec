@@ -10,14 +10,8 @@
   },
   "servers": [
     {
-      "url": "{baseUrl}",
-      "description": "Okapi / Medad ILS gateway",
-      "variables": {
-        "baseUrl": {
-          "default": "https://okapi.qa.medad.com",
-          "description": "Okapi base URL (Postman {{URL}} / {{URL-Okapi}})"
-        }
-      }
+      "url": "https://okapi.qa.medad.com",
+      "description": "Okapi QA"
     }
   ],
   "tags": [
