@@ -1,0 +1,644 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Medad ILS - User Provisioning API",
+    "version": "1.1.0",
+    "description": "Focused OpenAPI 3.1 specification based on the supplied Medad ILS OpenAPI sample. Adds FOLIO user creation and permission-user creation operations for provisioning. Validate endpoints, payload requirements, permissions, and response codes against the target Medad ILS/FOLIO deployment before production use."
+  },
+  "servers": [
+    {
+      "url": "{baseUrl}",
+      "description": "Okapi / Medad ILS gateway",
+      "variables": {
+        "baseUrl": {
+          "default": "https://okapi.qa.medad.com",
+          "description": "Replace with the target Medad ILS Okapi base URL."
+        }
+      }
+    }
+  ],
+  "tags": [
+    {
+      "name": "Authentication",
+      "description": "Obtain an Okapi token."
+    },
+    {
+      "name": "Users",
+      "description": "Create, search, and update FOLIO user records."
+    },
+    {
+      "name": "Permissions",
+      "description": "Create the permission-user record associated with a user."
+    }
+  ],
+  "paths": {
+    "/authn/login": {
+      "post": {
+        "operationId": "loginAuthn",
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Authenticate and obtain an Okapi token",
+        "description": "Use a service account with the minimum required permissions. The returned x-okapi-token is sent on subsequent calls.",
+        "security": [
+          {
+            "OkapiTenant": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              },
+              "example": {
+                "username": "folio_provisioning_service",
+                "password": "REPLACE_WITH_SECRET"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Authenticated. Capture x-okapi-token for subsequent requests.",
+            "headers": {
+              "x-okapi-token": {
+                "description": "Okapi token/JWT for subsequent requests.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/users": {
+      "get": {
+        "operationId": "listUsers",
+        "tags": [
+          "Users"
+        ],
+        "summary": "Search users",
+        "description": "Use a CQL query to find an existing user before attempting creation, helping avoid duplicate records.",
+        "security": [
+          {
+            "OkapiTenant": [],
+            "OkapiToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "description": "FOLIO CQL query. Example: username==\"external-user-123\"",
+            "schema": {
+              "type": "string"
+            },
+            "example": "username==\"external-user-123\""
+          },
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Users matching the query.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsersResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createUser",
+        "tags": [
+          "Users"
+        ],
+        "summary": "Create a FOLIO user",
+        "description": "Creates a user record in FOLIO. The user ID should be generated once by the provisioning workflow and reused for the associated permission-user record. The supplied reference RAML states that a permission record must be created through POST /perms/users before creating the user; confirm this ordering against the deployed FOLIO version.",
+        "security": [
+          {
+            "OkapiTenant": [],
+            "OkapiToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCreate"
+              },
+              "example": {
+                "id": "7c7a0099-b443-415c-ab5f-34c3bc65f50e",
+                "username": "external-user-123",
+                "active": true,
+                "patronGroup": "f2bf7b08-6ead-4498-9227-b379b72d4a4d",
+                "externalSystemId": "external-user-123",
+                "personal": {
+                  "firstName": "Amina",
+                  "lastName": "Example",
+                  "email": "amina@example.org",
+                  "addresses": [],
+                  "preferredContactTypeId": "002"
+                },
+                "proxyFor": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User created.",
+            "headers": {
+              "Location": {
+                "description": "URI of the created user resource, when returned by the deployment.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/perms/users": {
+      "post": {
+        "operationId": "createPermissionUser",
+        "tags": [
+          "Permissions"
+        ],
+        "summary": "Create a permission-user record",
+        "description": "Creates the permission assignment record associated with a FOLIO user. For a patron who does not need staff permissions, the permissions array may be empty. Confirm the exact creation sequence with the deployed FOLIO version; the supplied mod-users RAML says to create this record before POST /users.",
+        "security": [
+          {
+            "OkapiTenant": [],
+            "OkapiToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PermissionUserCreate"
+              },
+              "example": {
+                "id": "7c7a0099-b443-415c-ab5f-34c3bc65f50e",
+                "userId": "7c7a0099-b443-415c-ab5f-34c3bc65f50e",
+                "permissions": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Permission-user record created.",
+            "headers": {
+              "Location": {
+                "description": "URI of the created permission-user resource, if returned.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionUser"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Created or accepted by a deployment that returns HTTP 200.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionUser"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/users/{userId}": {
+      "put": {
+        "operationId": "updateUser",
+        "tags": [
+          "Users"
+        ],
+        "summary": "Update an existing FOLIO user",
+        "description": "Updates a user record. Send the full payload required by the deployed FOLIO API; do not assume this is a partial PATCH operation.",
+        "security": [
+          {
+            "OkapiTenant": [],
+            "OkapiToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "FOLIO user UUID."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "User updated with no response body."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "OkapiTenant": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-okapi-tenant",
+        "description": "FOLIO tenant identifier."
+      },
+      "OkapiToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-okapi-token",
+        "description": "Token obtained from POST /authn/login. Fusion must be able to acquire, store, and refresh this token as required."
+      }
+    },
+    "parameters": {
+      "limit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 10
+        },
+        "description": "Maximum number of records to return."
+      },
+      "offset": {
+        "name": "offset",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "description": "Number of records to skip."
+      }
+    },
+    "schemas": {
+      "LoginRequest": {
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string",
+            "format": "password"
+          }
+        },
+        "additionalProperties": false
+      },
+      "LoginResponse": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "permissions": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "UserCreate": {
+        "type": "object",
+        "required": [
+          "username",
+          "active",
+          "patronGroup",
+          "personal"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Supply a stable UUID if the provisioning workflow creates the permission record first."
+          },
+          "username": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean",
+            "default": true
+          },
+          "patronGroup": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Must be a valid patron group ID configured in this FOLIO tenant."
+          },
+          "externalSystemId": {
+            "type": "string",
+            "description": "Optional external identifier; confirm how the tenant uses it for identity matching."
+          },
+          "barcode": {
+            "type": "string"
+          },
+          "proxyFor": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "personal": {
+            "type": "object",
+            "required": [
+              "lastName"
+            ],
+            "properties": {
+              "firstName": {
+                "type": "string"
+              },
+              "lastName": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string",
+                "format": "email"
+              },
+              "phone": {
+                "type": "string"
+              },
+              "mobilePhone": {
+                "type": "string"
+              },
+              "preferredContactTypeId": {
+                "type": "string"
+              },
+              "addresses": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            },
+            "additionalProperties": true
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/Metadata"
+          }
+        },
+        "additionalProperties": true
+      },
+      "User": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/UserCreate"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "metadata": {
+                "$ref": "#/components/schemas/Metadata"
+              }
+            }
+          }
+        ]
+      },
+      "PermissionUserCreate": {
+        "type": "object",
+        "required": [
+          "id",
+          "userId",
+          "permissions"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Use an empty array for a patron who does not require staff permissions."
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/Metadata"
+          }
+        },
+        "additionalProperties": true
+      },
+      "PermissionUser": {
+        "$ref": "#/components/schemas/PermissionUserCreate"
+      },
+      "UsersResponse": {
+        "type": "object",
+        "properties": {
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/User"
+            }
+          },
+          "totalRecords": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": true
+      },
+      "Metadata": {
+        "type": "object",
+        "properties": {
+          "createdDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdByUserId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "updatedDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedByUserId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": true
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Bad request.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Not authorized.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource not found.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "description": "Validation error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  }
+}
